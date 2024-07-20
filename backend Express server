@@ -1,0 +1,119 @@
+
+const express = require('express');
+const multer = require('multer');
+const csv = require('csv-parser');
+const fs = require('fs');
+const mongoose = require('mongoose');
+const app = express();
+const upload = multer({ dest: 'uploads/' });
+
+mongoose.connect('mongodb://localhost:27017/hospitality', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+});
+
+const GroupSchema = new mongoose.Schema({
+  groupId: Number,
+  members: Number,
+  gender: String
+});
+
+const HostelSchema = new mongoose.Schema({
+  hostelName: String,
+  roomNumber: Number,
+  capacity: Number,
+  gender: String
+});
+
+const AllocationSchema = new mongoose.Schema({
+  groupId: Number,
+  hostelName: String,
+  roomNumber: Number,
+  membersAllocated: Number
+});
+
+const Group = mongoose.model('Group', GroupSchema);
+const Hostel = mongoose.model('Hostel', HostelSchema);
+const Allocation = mongoose.model('Allocation', AllocationSchema);
+
+app.post('/upload', upload.array('files', 2), (req, res) => {
+  const groupFile = req.files[0].path;
+  const hostelFile = req.files[1].path;
+
+  // Parse CSV files and store data in MongoDB
+  parseCSV(groupFile, 'Group');
+  parseCSV(hostelFile, 'Hostel');
+
+  allocateRooms().then(() => {
+    res.send('Files uploaded and processed.');
+  });
+});
+
+const parseCSV = (filePath, type) => {
+  fs.createReadStream(filePath)
+    .pipe(csv())
+    .on('data', (row) => {
+      if (type === 'Group') {
+        const group = new Group({
+          groupId: row['Group ID'],
+          members: row['Members'],
+          gender: row['Gender']
+        });
+        group.save();
+      } else if (type === 'Hostel') {
+        const hostel = new Hostel({
+          hostelName: row['Hostel Name'],
+          roomNumber: row['Room Number'],
+          capacity: row['Capacity'],
+          gender: row['Gender']
+        });
+        hostel.save();
+      }
+    });
+};
+
+const allocateRooms = async () => {
+  const groups = await Group.find().sort({ members: -1 }).exec();
+  const hostels = await Hostel.find().exec();
+  
+  for (const group of groups) {
+    for (const hostel of hostels) {
+      if (hostel.gender === group.gender && hostel.capacity >= group.members) {
+        const allocation = new Allocation({
+          groupId: group.groupId,
+          hostelName: hostel.hostelName,
+          roomNumber: hostel.roomNumber,
+          membersAllocated: group.members
+        });
+        allocation.save();
+        hostel.capacity -= group.members;
+        break;
+      }
+    }
+  }
+};
+
+app.get('/allocation', async (req, res) => {
+  const allocations = await Allocation.find().exec();
+  res.json(allocations);
+});
+
+app.get('/download', async (req, res) => {
+  const allocations = await Allocation.find().exec();
+  const csvWriter = require('csv-writer').createObjectCsvWriter({
+    path: 'allocations.csv',
+    header: [
+      { id: 'groupId', title: 'Group ID' },
+      { id: 'hostelName', title: 'Hostel Name' },
+      { id: 'roomNumber', title: 'Room Number' },
+      { id: 'membersAllocated', title: 'Members Allocated' }
+    ]
+  });
+  csvWriter.writeRecords(allocations).then(() => {
+    res.download('allocations.csv');
+  });
+});
+
+app.listen(3000, () => {
+  console.log('Server is running on port 3000');
+});
