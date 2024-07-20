@@ -1,0 +1,75 @@
+import React, { useState } from 'react';
+import axios from 'axios';
+
+const FileUpload = () => {
+  const [files, setFiles] = useState(null);
+  const [allocations, setAllocations] = useState([]);
+
+  const handleFileChange = (e) => {
+    setFiles(e.target.files);
+  };
+
+  const handleUpload = () => {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+
+    axios.post('/upload', formData)
+      .then(() => {
+        fetchAllocations();
+      })
+      .catch(err => console.error(err));
+  };
+
+  const fetchAllocations = () => {
+    axios.get('/allocation')
+      .then(response => {
+        setAllocations(response.data);
+      })
+      .catch(err => console.error(err));
+  };
+
+  const handleDownload = () => {
+    axios.get('/download')
+      .then(() => {
+        window.location.href = '/download';
+      })
+      .catch(err => console.error(err));
+  };
+
+  return (
+    <div>
+      <input type="file" multiple onChange={handleFileChange} />
+      <button onClick={handleUpload}>Upload</button>
+
+      {allocations.length > 0 && (
+        <div>
+          <table>
+            <thead>
+              <tr>
+                <th>Group ID</th>
+                <th>Hostel Name</th>
+                <th>Room Number</th>
+                <th>Members Allocated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allocations.map((allocation, index) => (
+                <tr key={index}>
+                  <td>{allocation.groupId}</td>
+                  <td>{allocation.hostelName}</td>
+                  <td>{allocation.roomNumber}</td>
+                  <td>{allocation.membersAllocated}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button onClick={handleDownload}>Download CSV</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default FileUpload;
